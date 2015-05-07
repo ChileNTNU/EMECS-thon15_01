@@ -28,6 +28,7 @@
 #define RX_PIN		1
 
 volatile uint32_t msTicks; /* counts 1ms timeTicks */
+volatile char rx_char = 0;
 
 void Delay(uint32_t dlyTicks);
 
@@ -60,8 +61,7 @@ int main(void)
 
   CHIP_Init();                                   // This function addresses some chip errata and should be called at the start of every EFM32 application (need em_system.c)
   uint8_t i;
-  char rx_char = 0;
-  char test_string[] = "Start!\n";
+  char init_message[] = "Start!\n";
 
   /* Setup SysTick Timer for 1 msec interrupts  */
   if (SysTick_Config(CMU_ClockFreqGet(cmuClock_CORE) / 1000)) while (1) ;
@@ -88,24 +88,28 @@ int main(void)
   USART1->ROUTE = 0x103;                                     // Enable TX and RX pins, use location #1 (UART TX and RX located at PD0 and PD1, see EFM32GG990 datasheet for details)
 
   // Print test string
-  for(i=0; i<strlen(test_string); i++) {
+  for(i=0; init_message[i] != '\0'; i++) {
     while( !(USART1->STATUS & (1 << 6)) ); // wait for TX buffer to empty
-    USART1->TXDATA = test_string[i];
+    USART1->TXDATA = init_message[i];
   }
 
-#if 0
+  USART1->IEN = USART_IEN_RXDATAV;
+  NVIC_EnableIRQ(USART1_RX_IRQn);
+
+#if 1
   while (1)
   {
     BSP_LedToggle(0);
     BSP_LedToggle(1);
 
-    USART_Tx( USART1, data);
+    USART_Tx( USART1, 0xAA );
 
     Delay(1000);
   }
 #endif
 
-#if 1
+
+#if 0
   while(1) {
     if(USART1->STATUS & (1 << 7)) {   // if RX buffer contains valid data
       rx_char = USART1->RXDATA;       // store the data
@@ -163,4 +167,17 @@ int main(void)
     Delay(1000);
   }
 #endif
+}
+
+
+void USART1_RX_IRQHandler(void) {
+	if(USART1->STATUS & (1 << 7)) {   // if RX buffer contains valid data
+	      rx_char = USART1->RXDATA;       // store the data
+	    }
+	    if(rx_char) {                     // if we have a valid character
+	      if(USART1->STATUS & (1 << 6)) { // check if TX buffer is empty
+	        USART1->TXDATA = rx_char;     // echo received char
+	        rx_char = 0;
+	      }
+	    }
 }
